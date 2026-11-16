@@ -1,0 +1,52 @@
+name: Importar y publicar En visto
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: en-visto-pages
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Importar los archivos originales si falta la copia
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f site/index.html ]]; then
+            base='https://en-visto-mariana.regalbull32771.chatgpt.site'
+            mkdir -p site/assets
+            for file in index.html style.css app.mjs story.mjs assets/mosca.png assets/escritorio.png; do
+              endpoint="/$file"
+              if [[ "$file" == index.html ]]; then endpoint='/'; fi
+              curl --proto '=https' --fail --silent --show-error --retry 2 --max-time 30 "$base$endpoint" -o "site/$file"
+            done
+            grep -Fq 'app.mjs' site/index.html
+            grep -Fq './story.mjs' site/app.mjs
+            grep -Fq 'choicesFor' site/story.mjs
+            file --mime-type site/assets/*.png | awk '$NF != "image/png" { exit 1 }'
+            node --check site/app.mjs
+            node --check site/story.mjs
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- site
+            git commit -m 'Importar En visto desde su publicación original'
+            git push origin HEAD:main
+          fi
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment: github-pages
+    steps:
+      - name: Publicar en GitHub Pages
+        uses: actions/deploy-pages@v4
